@@ -38,9 +38,9 @@ if (-not (Test-Path $Workspace)) { New-Item -ItemType Directory -Force -Path $Wo
 $PythonScriptPath = "$Workspace\gorev.py"
 
 # --- GİTHUB BAĞLANTI AYARLARI ---
-$GitHubToken = "github_pat_BURAYA_TOKEN"  # GitHub'dan aldığın Token'ı buraya yaz
-$RepoOwner   = "KullaniciAdin"            # GitHub Kullanıcı Adın
-$RepoName    = "DepoAdin"                 # GitHub Depo Adın
+$GitHubToken = "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"  # GitHub'dan aldığın Token'ı buraya yaz
+$RepoOwner   = "firatseyrek35"            # GitHub Kullanıcı Adın
+$RepoName    = "digger"                 # GitHub Depo Adın
 $Branch      = "main"
 
 $Headers = @{ "Authorization" = "Bearer $GitHubToken"; "Accept" = "application/vnd.github.v3+json" }
